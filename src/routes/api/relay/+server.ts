@@ -7,14 +7,14 @@ import { submitToRelayer } from '$lib/server/relayer';
  * Same-origin proxy for the OpenZeppelin Relayer (Channels plugin).
  *
  * The client posts either `{ xdr }` or `{ func, auth[] }`; we forward the
- * payload to `https://channels.openzeppelin.com/<network>/<api-key>` using
- * credentials held server-side, then return the submitted transaction hash.
- * Keeping the relayer API key off the client is the whole point.
+ * payload to `https://channels.openzeppelin.com/<network>` using credentials
+ * held server-side, then return the submitted transaction hash. Keeping the
+ * relayer API key off the client is the whole point.
  */
 export const POST: RequestHandler = async ({ request }) => {
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {
-        return error(400, { message: 'request body must be a JSON object' });
+        throw error(400, 'request body must be a JSON object');
     }
 
     const xdr = typeof body.xdr === 'string' ? body.xdr.trim() : '';
@@ -30,11 +30,11 @@ export const POST: RequestHandler = async ({ request }) => {
                 : [];
             return json(await submitToRelayer({ func, auth }));
         }
-        return error(400, { message: 'provide either `xdr` or `func` (+ optional `auth`)' });
+        throw error(400, 'provide either `xdr` or `func` (+ optional `auth`)');
     } catch (err) {
+        // Rethrow SvelteKit HttpErrors (from the 400s above) unchanged.
+        if (err && typeof err === 'object' && 'status' in err && 'body' in err) throw err;
         console.error('[relay] submission failed:', err);
-        return error(502, {
-            message: err instanceof Error ? err.message : 'relayer submission failed',
-        });
+        throw error(502, err instanceof Error ? err.message : 'relayer submission failed');
     }
 };

@@ -117,6 +117,6 @@ export const GET: RequestHandler = async ({ params }) => {
     } catch (err) {
         console.error('[fund]', err);
         const detail = err instanceof Error ? err.message : String(err);
-        return error(500, { message: `Error when funding smart wallet: ${detail}` });
+        throw error(500, `Error when funding smart wallet: ${detail}`);
     }
 };

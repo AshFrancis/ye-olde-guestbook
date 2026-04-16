@@ -15,9 +15,9 @@ export const load: PageServerLoad = async ({ params }) => {
         };
     } catch (err: unknown) {
         console.error(err);
-        error(500, {
-            message:
-                "Sorry, something went wrong. Most likely, the message you're looking for doesn't exist.",
-        });
+        throw error(
+            500,
+            "Sorry, something went wrong. Most likely, the message you're looking for doesn't exist.",
+        );
     }
 };
