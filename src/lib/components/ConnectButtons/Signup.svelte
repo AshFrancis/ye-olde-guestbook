@@ -1,47 +1,36 @@
 <script lang="ts">
-    import { error } from '@sveltejs/kit';
     import { Dialog, Portal } from '@skeletonlabs/skeleton-svelte';
     import { toaster } from '$lib/toaster';
-    import { account, send, fundContract } from '$lib/passkeyClient';
+    import { account, fundContract } from '$lib/passkeyClient';
     import { user } from '$lib/state/UserState.svelte';
 
     let username: string = $state('');
 
     async function signup() {
-        console.log('signing up');
         try {
-            const { keyIdBase64, contractId, signedTx } = await account.createWallet(
-                'Ye Olde Guestbook',
-                username,
-            );
-
-            user.set({
-                keyId: keyIdBase64,
-                contractAddress: contractId,
+            // createWallet with autoSubmit=true deploys the smart account
+            // on-chain via the configured relayer (our /api/relay proxy),
+            // so we no longer need a separate send() step for the deploy tx.
+            const result = await account.createWallet('Ye Olde Guestbook', username, {
+                autoSubmit: true,
             });
 
-            console.log('keyId', user.keyId);
-            console.log('contractAddress', user.contractAddress);
-
-            if (!signedTx) {
-                error(500, {
-                    message: 'built transaction missing',
-                });
+            if (result.submitResult && !result.submitResult.success) {
+                throw new Error(result.submitResult.error ?? 'wallet deploy failed');
             }
 
-            if (!user.contractAddress) {
-                error(500, {
-                    message: 'missing user contract address',
-                });
-            }
+            user.set({
+                keyId: result.credentialId,
+                contractAddress: result.contractId,
+            });
 
-            await send(signedTx);
-            await fundContract(user.contractAddress);
+            await fundContract(result.contractId);
         } catch (err) {
-            console.error(err);
+            console.error('[signup]', err);
+            const detail = err instanceof Error ? err.message : String(err);
             toaster.error({
-                title: 'Error',
-                description: 'Something went wrong signing up. Please try again later.',
+                title: 'Signup failed',
+                description: detail,
             });
         }
     }

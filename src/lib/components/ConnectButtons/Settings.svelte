@@ -12,21 +12,42 @@
     import { toaster } from '$lib/toaster';
     import { user } from '$lib/state/UserState.svelte';
     import { seContractLink } from '$lib/stellarExpert';
-    import { fundContract, native } from '$lib/passkeyClient';
+    import { fundContract, rpc } from '$lib/passkeyClient';
+    import { Address, Asset, xdr, scValToNative } from '@stellar/stellar-sdk';
     import Identicon from '$lib/components/ui/Identicon.svelte';
     import TruncatedAddress from '$lib/components/ui/TruncatedAddress.svelte';
     import DonateButton from '$lib/components/ConnectButtons/DonateButton.svelte';
+
+    import { PUBLIC_STELLAR_NETWORK_PASSPHRASE } from '$env/static/public';
 
     let balance: string = $state('0');
     let isFunding: boolean = $state(false);
 
     async function getBalance() {
-        console.log('fetching balances');
         try {
-            const { result } = await native.balance({ id: user.contractAddress! });
-            balance = result.toString();
+            // Read the SAC `Balance(<owner>)` entry directly from ledger
+            // storage. Avoids `contract.Client.from(...)` for the native SAC,
+            // whose lazy spec load trips XDR encoding in our bundle.
+            const nativeContractId = Asset.native().contractId(PUBLIC_STELLAR_NETWORK_PASSPHRASE);
+            const ownerScVal = new Address(user.contractAddress!).toScVal();
+            const balanceKey = xdr.LedgerKey.contractData(
+                new xdr.LedgerKeyContractData({
+                    contract: new Address(nativeContractId).toScAddress(),
+                    key: xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Balance'), ownerScVal]),
+                    durability: xdr.ContractDataDurability.persistent(),
+                }),
+            );
+
+            const { entries } = await rpc.getLedgerEntries(balanceKey);
+            if (entries.length === 0) {
+                balance = '0';
+                return;
+            }
+            const data = entries[0].val.contractData().val();
+            const record = scValToNative(data) as { amount?: bigint };
+            balance = (record.amount ?? 0n).toString();
         } catch (err) {
-            console.log(err);
+            console.error('[balance]', err);
             toaster.error({
                 title: 'Error',
                 description: 'Something went wrong checking your balance. Please try again later.',
@@ -35,7 +56,6 @@
     }
 
     async function fund() {
-        console.log('funding wallet');
         isFunding = true;
 
         toaster.promise(fundContract(user.contractAddress!), {
@@ -50,26 +70,33 @@
                     description: 'Funds received. Congrats!',
                 };
             },
-            error: () => ({
-                title: 'Error',
-                description: 'Something went funding smart wallet. Please try again later.',
-            }),
+            error: (err: unknown) => {
+                console.error('[fund]', err);
+                const detail = err instanceof Error ? err.message : String(err);
+                return {
+                    title: 'Error',
+                    description: `Funding failed: ${detail}`,
+                };
+            },
             finally: () => {
                 isFunding = false;
             },
         });
     }
 
-    async function logout() {
+    async function copyAddress() {
+        if (!user.contractAddress) return;
         try {
-            user.reset();
+            await navigator.clipboard.writeText(user.contractAddress);
+            toaster.success({ title: 'Copied', description: 'Smart wallet address copied.' });
         } catch (err) {
-            console.error(err);
-            toaster.error({
-                title: 'Error',
-                description: 'Something went wrong logging out. Please try again later.',
-            });
+            console.error('[copy]', err);
+            toaster.error({ title: 'Copy failed', description: 'Your browser blocked the copy.' });
         }
+    }
+
+    function logout() {
+        user.reset();
     }
 </script>
 
@@ -103,12 +130,10 @@
                     <div class="mt-1">
                         <div class="overflow-hidden flex items-center gap-3">
                             <TruncatedAddress address={user.contractAddress!} />
-                            <!-- TODO: this copy/pasting doesn't work... :shrug: -->
-                            <input type="hidden" bind:value={user.contractAddress} data-address />
                             <button
                                 type="button"
                                 class="btn-icon btn-icon-sm preset-tonal-surface"
-                                data-copy-address><Copy size="14" /></button
+                                onclick={copyAddress}><Copy size="14" /></button
                             >
                         </div>
                     </div>

@@ -1,12 +1,18 @@
 <script lang="ts">
     import { Dialog, Portal } from '@skeletonlabs/skeleton-svelte';
-    import { native, account, send } from '$lib/passkeyClient';
+    import { SAK_DEPLOYER_PUBLIC_KEY, send } from '$lib/passkeyClient';
     import { networks } from 'ye_olde_guestbook';
     import { user } from '$lib/state/UserState.svelte';
     import { toaster } from '$lib/toaster';
+    import { Address, Asset, contract, xdr } from '@stellar/stellar-sdk';
 
     import HandHelping from '@lucide/svelte/icons/hand-helping';
     import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+
+    import {
+        PUBLIC_STELLAR_NETWORK_PASSPHRASE,
+        PUBLIC_STELLAR_RPC_URL,
+    } from '$env/static/public';
 
     interface Props {
         getBalance: () => void;
@@ -21,14 +27,40 @@
             throw 'undefined donation amount';
         }
 
-        const at = await native.transfer({
-            to: networks.testnet.contractId,
-            from: user.contractAddress!,
-            amount: BigInt(donation * 10_000_000),
+        // Build the SAC `transfer(from, to, amount)` call with ScVal args so
+        // we avoid `contract.Client.from` (flaky with the SAC spec in our
+        // bundle). `send()` passes the result to SmartAccountKit's
+        // signAndSubmit, which signs the smart account's auth entry and
+        // submits via /api/relay.
+        const nativeContractId = Asset.native().contractId(PUBLIC_STELLAR_NETWORK_PASSPHRASE);
+        const amountI128 = xdr.ScVal.scvI128(
+            new xdr.Int128Parts({
+                hi: xdr.Int64.fromString('0'),
+                lo: xdr.Uint64.fromString(
+                    BigInt(Math.round(donation * 10_000_000)).toString(),
+                ),
+            }),
+        );
+
+        const at = await contract.AssembledTransaction.build({
+            contractId: nativeContractId,
+            method: 'transfer',
+            args: [
+                new Address(user.contractAddress!).toScVal(),
+                new Address(networks.testnet.contractId).toScVal(),
+                amountI128,
+            ],
+            rpcUrl: PUBLIC_STELLAR_RPC_URL,
+            networkPassphrase: PUBLIC_STELLAR_NETWORK_PASSPHRASE,
+            // G-address stand-in for the source (stellar-sdk's Account
+            // rejects C-addresses). signAndSubmit re-signs with its own copy
+            // of this deployer before submitting.
+            publicKey: SAK_DEPLOYER_PUBLIC_KEY,
+            timeoutInSeconds: 60,
+            parseResultXdr: (result: xdr.ScVal) => result,
         });
-        await account.sign(at, { keyId: user.keyId! });
-        const res = await send(at.built!);
-        console.log(res);
+
+        await send(at);
     }
 
     async function donate() {
@@ -42,10 +74,14 @@
                 title: 'Success',
                 description: 'Donation received! You really ARE the goat.',
             }),
-            error: () => ({
-                title: 'Error',
-                description: 'Something went wrong donating. Please try again later.',
-            }),
+            error: (err: unknown) => {
+                console.error('[donate]', err);
+                const detail = err instanceof Error ? err.message : String(err);
+                return {
+                    title: 'Error',
+                    description: `Donation failed: ${detail}`,
+                };
+            },
             finally: () => {
                 isDonating = false;
                 getBalance();

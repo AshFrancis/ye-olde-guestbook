@@ -4,23 +4,21 @@
     import { user } from '$lib/state/UserState.svelte';
 
     async function login() {
-        console.log('logging in');
         try {
-            const { keyIdBase64, contractId } = await account.connectWallet();
+            // `prompt: true` asks the user's authenticator to pick a passkey;
+            // SmartAccountKit uses the selected credential to look up the
+            // matching smart-account contract via its IndexedDB index.
+            const result = await account.connectWallet({ prompt: true });
+            if (!result) throw new Error('wallet connection was cancelled');
 
             user.set({
-                keyId: keyIdBase64,
-                contractAddress: contractId,
+                keyId: result.credentialId,
+                contractAddress: result.contractId,
             });
-
-            console.log('keyId', user.keyId);
-            console.log('contractAddress', user.contractAddress);
         } catch (err) {
-            console.error(err);
-            toaster.error({
-                title: 'Error',
-                description: 'Something went wrong logging in. Please try again later.',
-            });
+            console.error('[login]', err);
+            const detail = err instanceof Error ? err.message : String(err);
+            toaster.error({ title: 'Login failed', description: detail });
         }
     }
 </script>

@@ -1,12 +1,11 @@
 <script lang="ts">
-    import { xdr } from '@stellar/stellar-sdk';
     import { goto } from '$app/navigation';
     import { resolve } from '$app/paths';
 
     import Signature from '@lucide/svelte/icons/signature';
     import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 
-    import { account, send } from '$lib/passkeyClient';
+    import { send } from '$lib/passkeyClient';
     import { toaster } from '$lib/toaster';
     import { user } from '$lib/state/UserState.svelte';
     import ye_olde_guestbook from '$lib/contracts/ye_olde_guestbook';
@@ -29,9 +28,12 @@
                 text: messageText,
             });
 
-            let txn = await account.sign(at.built!, { keyId: user.keyId });
-            const { returnValue } = await send(txn.built!);
-            const messageId = xdr.ScVal.fromXDR(returnValue, 'base64').u32();
+            // send() signs with the active smart account and submits via the
+            // /api/relay proxy. The AssembledTransaction already carries the
+            // simulated return value parsed by the contract spec — the
+            // contract returns Result<u32>, so unwrap() gives us the id.
+            await send(at);
+            const messageId = at.result.unwrap();
 
             toaster.success({
                 title: 'Success',

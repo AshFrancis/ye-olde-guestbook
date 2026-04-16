@@ -8,7 +8,7 @@
     import X from '@lucide/svelte/icons/x';
 
     import ye_olde_guestbook from '$lib/contracts/ye_olde_guestbook';
-    import { account, send } from '$lib/passkeyClient';
+    import { send } from '$lib/passkeyClient';
     import { toaster } from '$lib/toaster';
     import { user } from '$lib/state/UserState.svelte';
 
@@ -30,7 +30,6 @@
     };
 
     const submitEdit = async () => {
-        console.log('submitting message edit');
         isLoading = true;
         try {
             if (!user.keyId) {
@@ -43,15 +42,14 @@
                 text: messageText,
             });
 
-            const txn = await account.sign(at.built!, { keyId: user.keyId });
-            await send(txn.built!);
+            await send(at);
 
             toaster.success({
                 title: 'Success',
                 description: 'Message edited successfully.',
             });
         } catch (err) {
-            console.log(err);
+            console.error('[edit]', err);
             toaster.error({
                 title: 'Error',
                 description: 'Something went wrong editing your message. Please try again later.',

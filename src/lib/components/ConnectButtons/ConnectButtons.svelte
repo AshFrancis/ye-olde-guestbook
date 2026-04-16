@@ -8,18 +8,23 @@
     import { onMount } from 'svelte';
 
     onMount(async () => {
-        if (user.keyId) {
-            console.log('keyId', user.keyId);
+        if (!user.keyId) return;
 
-            const { contractId } = await account.connectWallet({
-                keyId: user.keyId,
-            });
+        try {
+            // Silent reconnect using the credentialId we already saved in
+            // localStorage. No passkey prompt on page reload.
+            const result = await account.connectWallet({ credentialId: user.keyId });
+            if (!result) return;
+
             user.set({
-                keyId: user.keyId,
-                contractAddress: contractId,
+                keyId: result.credentialId,
+                contractAddress: result.contractId,
             });
-
-            console.log('contractAddress', user.contractAddress);
+        } catch (err) {
+            // Credential is in storage but the kit can't resolve it to a
+            // live on-chain contract (stale session, different device, etc.).
+            // Keep the cached address so Settings still renders.
+            console.warn('[connect] silent reconnect failed:', err);
         }
     });
 </script>
