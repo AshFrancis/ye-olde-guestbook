@@ -30,9 +30,8 @@
                         <a
                             class="anchor"
                             target="_blank"
-                            href="https://github.com/elliotfriend/ye-olde-guestbook"
+                            href="https://github.com/AshFrancis/ye-olde-guestbook"
                         >
-                            <!-- <img class="anchor inline mr-2" src={Github} width=24 alt="Github invertocat logo" />elliotfriend/ye-olde-guestbook -->
                             View Source Code
                         </a>
                     </li>
